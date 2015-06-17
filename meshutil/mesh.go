@@ -118,6 +118,23 @@ func (m *triangleMesh) makeBuffers() (vertices []vertex, indices []int) {
 	return
 }
 
+func (v *vertex) format() []byte {
+	buf := new(bytes.Buffer)
+	pos := [3]float32{
+		float32(v.position.x),
+		float32(v.position.y),
+		float32(v.position.z),
+	}
+	norm := [3]float32{
+		float32(v.normal.x),
+		float32(v.normal.y),
+		float32(v.normal.z),
+	}
+	binary.Write(buf, binary.LittleEndian, pos)
+	binary.Write(buf, binary.LittleEndian, norm)
+	return buf.Bytes()
+}
+
 // TODO: use triangleMesh instead of Mesh here?
 func (m *Mesh) WriteOpenGL(filename string) {
 	file, _ := os.Create(filename)
@@ -127,12 +144,7 @@ func (m *Mesh) WriteOpenGL(filename string) {
 
 	vdata := new(bytes.Buffer)
 	for _, v := range vertices {
-		v32 := [3]float32{
-			float32(v.position.x),
-			float32(v.position.y),
-			float32(v.position.z),
-		}
-		binary.Write(vdata, binary.LittleEndian, v32)
+		binary.Write(vdata, binary.LittleEndian, v.format())
 	}
 
 	idata := new(bytes.Buffer)
