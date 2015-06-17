@@ -4,7 +4,7 @@ import (
 	"flag"
 	//	"fmt"
 
-	"github.com/foukevin/acc/meshutil"
+	"github.com/foukevin/gacc/meshutil"
 )
 
 func check(e error) {
