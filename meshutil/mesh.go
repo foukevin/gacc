@@ -188,7 +188,7 @@ var attribsGL3 = [...]VertexAttribDesc{
 }
 
 // struct describing what composes a vertex
-type glVertexAttrib struct {
+type BinaryVertexAttrib struct {
 	Index, Count, Type, Normalized uint32
 	Stride, Offset uint32
 }
@@ -218,7 +218,7 @@ func (m *Mesh) WriteOpenGL(filename string) {
 
 	fmt.Println("Vertex attributes: ", trimesh.vertexAttribNames)
 	offset := 0
-	var glAttribs []glVertexAttrib
+	var binAttribArray []BinaryVertexAttrib
 	for _, va := range trimesh.vertexAttribNames {
 		desc := attribsGL3[va]
 		fmt.Printf("%+v\n", attribsGL3[va])
@@ -226,19 +226,19 @@ func (m *Mesh) WriteOpenGL(filename string) {
 		if desc.Normalized {
 			normalized = 1
 		}
-		glDesc := glVertexAttrib{
+		binAttrib := BinaryVertexAttrib{
 			Index: uint32(desc.Name),
 			Count: uint32(desc.Count),
 			Type: uint32(desc.Type),
 			Normalized: uint32(normalized),
 			Offset: uint32(offset),
 		}
-		offset += binary.Size(glDesc)
-		glAttribs = append(glAttribs, glDesc)
+		binAttribArray = append(binAttribArray, binAttrib)
+		offset += binary.Size(binAttrib)
 	}
 
 	vadata := new(bytes.Buffer)
-	for _, va := range glAttribs {
+	for _, va := range binAttribArray {
 		// Stride was not computable at first
 		va.Stride = uint32(offset)
 		fmt.Printf("%+v\n", va)
