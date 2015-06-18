@@ -36,28 +36,25 @@ type vertex struct {
 	tangent, binormal Vector3
 }
 
-type vertexAttributes struct {
-	position, normal bool
-	color0, color1 bool
-	texco0, texco1 bool
-	tangent, binormal bool
-}
-
 type triangle struct {
 	vertices [3]vertex
 }
 
 type triangleMesh struct {
-	attributes vertexAttributes
+	vertexAttribNames []VertexAttribName
 	triangles []triangle
 }
 
 func (m *Mesh) toTriangleMesh() *triangleMesh {
 	trimesh := new(triangleMesh)
 	has_position := len(m.Positions) > 0
-	trimesh.attributes.position = has_position
+	if has_position {
+		trimesh.vertexAttribNames = append(trimesh.vertexAttribNames, Position)
+	}
 	has_normal := len(m.Normals) > 0
-	trimesh.attributes.normal = has_normal
+	if has_position {
+		trimesh.vertexAttribNames = append(trimesh.vertexAttribNames, Normal)
+	}
 
 	for _, p := range m.Polygons {
 		var poly []vertex
@@ -118,33 +115,135 @@ func (m *triangleMesh) makeBuffers() (vertices []vertex, indices []int) {
 	return
 }
 
-func (v *vertex) format() []byte {
+type glHeader struct {
+	name [16]byte
+	vertAttribCount, vertAttribOffset uint32
+	surfDescCount, surfDescOffset uint32
+	vertCount, vertDataOffset, vertDataSize uint32
+	indCount, indDataOffset, indDataSize uint32
+	aabbCenter, aabbExtent [3]float32
+}
+
+type VertexAttribName uint32
+const (
+	Position VertexAttribName = iota
+        Normal
+        Color
+	Texco0
+	Texco1
+	TangentDet
+)
+
+type VertexAttribType uint32
+const (
+	Float32 VertexAttribType = iota
+	Int32
+	Int16
+	Uint16
+	Int8
+	Uint8
+)
+
+/*
+type VertexAttrib struct {
+	Name VertexAttribName
+	Count int
+}
+*/
+
+type VertexAttribFormat struct {
+	Type VertexAttribType
+	ByteSize int
+	MaxValue uint // used for normalized attributes
+}
+
+var attribFormat = [...]VertexAttribFormat{
+	{Float32, 4, uint(^uint32(0))},
+	{Int32, 4, uint(^uint32(0) >> 1) - 1},
+	{Int16, 2, uint(^uint16(0) >> 1) - 1},
+	{Uint16, 2, uint(^uint16(0)) - 1},
+	{Int8, 1, uint(^uint8(0) >> 1) -1},
+	{Uint8, 1, uint(^uint8(0)) - 1},
+}
+
+// TODO: rename to VertexAttribDesc
+type VertexAttribDesc struct {
+	Name VertexAttribName
+	Count int
+	Type VertexAttribType
+	Normalized bool
+}
+
+var attribsGL3 = [...]VertexAttribDesc{
+	{Position, 3, Float32, false},
+	{Normal, 3, Int16, true},
+	{Color, 3, Uint8, true},
+	{Texco0, 2, Float32, false},
+}
+
+// struct describing what composes a vertex
+type glVertexAttrib struct {
+	Index, Count, Type, Normalized uint32
+	Stride, Offset uint32
+}
+
+func (v *Vector3) format(format VertexAttribDesc) []byte {
 	buf := new(bytes.Buffer)
-	pos := [3]float32{
-		float32(v.position.x),
-		float32(v.position.y),
-		float32(v.position.z),
+	switch (format.Type) {
+	case Float32:
+		p := [3]float32{ float32(v.x), float32(v.y), float32(v.z), }
+		binary.Write(buf, binary.LittleEndian, p)
+	case Int16:
+		var l float64
+		if format.Normalized { l = 4 } else { l = 1 }
+		p := [3]int16{ int16(v.x/l), int16(v.y/l), int16(v.z/l) }
+		binary.Write(buf, binary.LittleEndian, p)
+	default:
+		panic("oops")
 	}
-	norm := [3]float32{
-		float32(v.normal.x),
-		float32(v.normal.y),
-		float32(v.normal.z),
-	}
-	binary.Write(buf, binary.LittleEndian, pos)
-	binary.Write(buf, binary.LittleEndian, norm)
 	return buf.Bytes()
 }
 
-// TODO: use triangleMesh instead of Mesh here?
 func (m *Mesh) WriteOpenGL(filename string) {
 	file, _ := os.Create(filename)
 	defer file.Close()
 
-	vertices, indices := m.toTriangleMesh().makeBuffers()
+	trimesh := m.toTriangleMesh()
 
+	fmt.Println("Vertex attributes: ", trimesh.vertexAttribNames)
+	offset := 0
+	var glAttribs []glVertexAttrib
+	for _, va := range trimesh.vertexAttribNames {
+		desc := attribsGL3[va]
+		fmt.Printf("%+v\n", attribsGL3[va])
+		normalized := 0
+		if desc.Normalized {
+			normalized = 1
+		}
+		glDesc := glVertexAttrib{
+			Index: uint32(desc.Name),
+			Count: uint32(desc.Count),
+			Type: uint32(desc.Type),
+			Normalized: uint32(normalized),
+			Offset: uint32(offset),
+		}
+		offset += binary.Size(glDesc)
+		glAttribs = append(glAttribs, glDesc)
+	}
+
+	vadata := new(bytes.Buffer)
+	for _, va := range glAttribs {
+		// Stride was not computable at first
+		va.Stride = uint32(offset)
+		fmt.Printf("%+v\n", va)
+		binary.Write(vadata, binary.LittleEndian, va)
+	}
+
+	vertices, indices := trimesh.makeBuffers()
 	vdata := new(bytes.Buffer)
 	for _, v := range vertices {
-		binary.Write(vdata, binary.LittleEndian, v.format())
+		binary.Write(vdata, binary.LittleEndian, v.position.format(attribsGL3[Position]))
+		binary.Write(vdata, binary.LittleEndian, v.normal.format(attribsGL3[Normal]))
 	}
 
 	idata := new(bytes.Buffer)
@@ -152,20 +251,27 @@ func (m *Mesh) WriteOpenGL(filename string) {
 		binary.Write(idata, binary.LittleEndian, uint16(i))
 	}
 
-	hdr := new(bytes.Buffer)
-	binary.Write(hdr, binary.LittleEndian, uint32(len(vertices)))
-	binary.Write(hdr, binary.LittleEndian, uint32(vdata.Len()))
-	binary.Write(hdr, binary.LittleEndian, uint32(len(indices)))
-	binary.Write(hdr, binary.LittleEndian, uint32(idata.Len()))
+	var header glHeader
+	headerSize := binary.Size(header)
+	copy(header.name[:], "untitled")
+	header.vertAttribCount = uint32(len(trimesh.vertexAttribNames))
+	header.vertAttribOffset = uint32(headerSize)
+	header.surfDescCount = 0
+	header.surfDescOffset = header.vertAttribOffset + 0
+	header.vertCount = uint32(len(vertices))
+	header.vertDataOffset = uint32(headerSize)
+	header.vertDataSize = uint32(vdata.Len())
+	header.indCount = uint32(len(indices))
+	header.indDataOffset = uint32(headerSize + vdata.Len())
+	header.indDataSize = uint32(idata.Len())
 
-	fmt.Println("vertex count: ", len(vertices))
-	fmt.Println("vertex data size: ", vdata.Len())
-	//fmt.Println(vertices)
-	fmt.Println("index data size: ", idata.Len())
-	fmt.Println("index count: ", len(indices))
-	//fmt.Println(indices)
+	fmt.Printf("%+v\n", header)
 
-	file.Write(hdr.Bytes())
+	hdata := new(bytes.Buffer)
+	binary.Write(hdata, binary.LittleEndian, header)
+
+	file.Write(hdata.Bytes())
+	file.Write(vadata.Bytes())
 	file.Write(vdata.Bytes())
 	file.Write(idata.Bytes())
 }
@@ -216,5 +322,6 @@ func ParseObj(filename string) Mesh {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+
 	return mesh
 }
