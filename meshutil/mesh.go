@@ -11,6 +11,7 @@ import (
 	"strings"
 )
 
+// An intermediate representation for 3d vectors
 type Vector3 struct {
 	x, y, z float64
 }
@@ -29,6 +30,7 @@ type Mesh struct {
 	Polygons []Polygon
 }
 
+//
 type vertex struct {
 	position, normal Vector3
 	color0, color1 Vector3
@@ -55,6 +57,10 @@ func (m *Mesh) toTriangleMesh() *triangleMesh {
 	if has_position {
 		trimesh.vertexAttribNames = append(trimesh.vertexAttribNames, Normal)
 	}
+	has_texco := len(m.Texcos) > 0
+	if has_texco {
+		trimesh.vertexAttribNames = append(trimesh.vertexAttribNames, Texco0)
+	}
 
 	for _, p := range m.Polygons {
 		var poly []vertex
@@ -65,6 +71,9 @@ func (m *Mesh) toTriangleMesh() *triangleMesh {
 			}
 			if has_normal {
 				newVert.normal = m.Normals[f.normalIndex]
+			}
+			if has_texco {
+				newVert.texco0 = m.Texcos[f.texcoIndex]
 			}
 			poly = append(poly, newVert)
 		}
@@ -90,10 +99,7 @@ func (m *Mesh) toTriangleMesh() *triangleMesh {
 
 	return trimesh
 }
-/*
-func (m *Mesh) parseObjLine(line string) {
-}
-*/
+
 func contains(vertices []vertex, vertex vertex) (bool, int) {
     for i, v := range vertices {
 	    if v == vertex { return true, i }
@@ -253,7 +259,7 @@ func (m *Mesh) WriteOpenGL(filename string) {
 
 	var header glHeader
 	headerSize := binary.Size(header)
-	copy(header.name[:], "untitled")
+	copy(header.name[:len(header.name)-1], m.Name)
 	header.vertAttribCount = uint32(len(trimesh.vertexAttribNames))
 	header.vertAttribOffset = uint32(headerSize)
 	header.surfDescCount = 0
@@ -280,9 +286,7 @@ func ParseObj(filename string) Mesh {
 	file, _ := os.Open(filename)
 	defer file.Close()
 
-	mesh := Mesh{
-		Name: "woot",
-	}
+	mesh := Mesh{ Name: "untitled" }
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.Split(scanner.Text(), " ")
@@ -298,6 +302,11 @@ func ParseObj(filename string) Mesh {
 			} else {
 				mesh.Normals = append(mesh.Normals, v)
 			}
+		case "vt":
+			s, _ := strconv.ParseFloat(val[0], 64)
+			t, _ := strconv.ParseFloat(val[1], 64)
+			v := Vector3{ s, t, 0 }
+			mesh.Texcos = append(mesh.Texcos, v)
 		case "f":
 			var p Polygon
 			for _, s := range val {
