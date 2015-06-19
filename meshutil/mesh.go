@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -44,10 +45,10 @@ type triangle struct {
 
 type triangleMesh struct {
 	vertexAttribNames []VertexAttribName
-	triangles []triangle
+	surfaces [][]triangle
 }
 
-func (m *Mesh) toTriangleMesh() *triangleMesh {
+func (m Mesh) toTriangleMesh() *triangleMesh {
 	trimesh := new(triangleMesh)
 	has_position := len(m.Positions) > 0
 	if has_position {
@@ -62,6 +63,8 @@ func (m *Mesh) toTriangleMesh() *triangleMesh {
 		trimesh.vertexAttribNames = append(trimesh.vertexAttribNames, Texco0)
 	}
 
+	// TODO: multiple surfaces
+	var triangles []triangle
 	for _, p := range m.Polygons {
 		var poly []vertex
 		for _, f := range p.verts {
@@ -87,15 +90,16 @@ func (m *Mesh) toTriangleMesh() *triangleMesh {
 			u.vertices[0] = poly[0]
 			u.vertices[1] = poly[2]
 			u.vertices[2] = poly[3]
-			trimesh.triangles = append(trimesh.triangles, t, u)
+			triangles = append(triangles, t, u)
 		case 3:
 			var t triangle
 			t.vertices[0] = poly[0]
 			t.vertices[1] = poly[1]
 			t.vertices[2] = poly[2]
-			trimesh.triangles = append(trimesh.triangles, t)
+			triangles = append(triangles, t)
 		}
 	}
+	trimesh.surfaces = append(trimesh.surfaces, triangles)
 
 	return trimesh
 }
@@ -108,7 +112,8 @@ func contains(vertices []vertex, vertex vertex) (bool, int) {
 }
 
 func (m *triangleMesh) makeBuffers() (vertices []vertex, indices []int) {
-	for _, tri := range m.triangles {
+	triangles := m.surfaces[0]
+	for _, tri := range triangles {
 		for _, vert := range tri.vertices {
 			alreadyIn, idx := contains(vertices, vert)
 			if !alreadyIn {
@@ -150,32 +155,19 @@ const (
 	Uint8
 )
 
-/*
-type VertexAttrib struct {
-	Name VertexAttribName
-	Count int
-}
-*/
+// used for attribute normalization
+const (
+	MaxFloat32 = float64(^uint32(0))
+	MaxInt32   = float64(^uint32(0) >> 1 - 1)
+	MaxInt16   = float64(^uint16(0) >> 1 - 1)
+	MaxUint16  = float64(^uint16(0) - 1)
+	MaxInt8    = float64(^uint8(0) >> 1 - 1)
+	MaxUint8   = float64(^uint8(0) - 1)
+)
 
-type VertexAttribFormat struct {
-	Type VertexAttribType
-	ByteSize int
-	MaxValue uint // used for normalized attributes
-}
-
-var attribFormat = [...]VertexAttribFormat{
-	{Float32, 4, uint(^uint32(0))},
-	{Int32, 4, uint(^uint32(0) >> 1) - 1},
-	{Int16, 2, uint(^uint16(0) >> 1) - 1},
-	{Uint16, 2, uint(^uint16(0)) - 1},
-	{Int8, 1, uint(^uint8(0) >> 1) -1},
-	{Uint8, 1, uint(^uint8(0)) - 1},
-}
-
-// TODO: rename to VertexAttribDesc
 type VertexAttribDesc struct {
 	Name VertexAttribName
-	Count int
+	Count uint
 	Type VertexAttribType
 	Normalized bool
 }
@@ -193,23 +185,55 @@ type BinaryVertexAttrib struct {
 	Stride, Offset uint32
 }
 
-func (v *Vector3) format(format VertexAttribDesc) []byte {
+type BinarySurfaceDesc struct {
+	Offset, Count uint32
+}
+
+func Dot(a, b Vector3) float64 {
+	return a.x*b.x + a.y*b.y + a.z*b.z
+}
+
+func (v *Vector3) MultiplyByScalar(s float64) {
+	*v = Vector3{ v.x*s, v.y*s, v.z*s }
+}
+
+func (v Vector3) Magnitude() float64 {
+	return math.Sqrt(Dot(v, v))
+}
+
+func (v Vector3) Normalized() Vector3 {
+	l := v.Magnitude()
+	return Vector3{ v.x/l, v.y/l, v.z/l }
+}
+
+func (v *Vector3) Normalize() {
+	*v = v.Normalized()
+}
+
+func (v Vector3) ToInt16(normalized bool) [3]int16 {
+	if normalized {
+		v.Normalize()
+		v.MultiplyByScalar(MaxInt16)
+	}
+	return [3]int16{ int16(v.x), int16(v.y), int16(v.z) }
+}
+
+func (v Vector3) format(format VertexAttribDesc) []byte {
 	buf := new(bytes.Buffer)
+
 	switch (format.Type) {
 	case Float32:
 		p := [3]float32{ float32(v.x), float32(v.y), float32(v.z), }
 		binary.Write(buf, binary.LittleEndian, p)
 	case Int16:
-		var l float64
-		if format.Normalized { l = 4 } else { l = 1 }
-		p := [3]int16{ int16(v.x/l), int16(v.y/l), int16(v.z/l) }
-		binary.Write(buf, binary.LittleEndian, p)
+		binary.Write(buf, binary.LittleEndian, v.ToInt16(format.Normalized))
 	default:
 		panic("oops")
 	}
 	return buf.Bytes()
 }
 
+// TODO: rename to Encode() []byte ?
 func (m *Mesh) WriteOpenGL(filename string) {
 	file, _ := os.Create(filename)
 	defer file.Close()
@@ -217,7 +241,7 @@ func (m *Mesh) WriteOpenGL(filename string) {
 	trimesh := m.toTriangleMesh()
 
 	fmt.Println("Vertex attributes: ", trimesh.vertexAttribNames)
-	offset := 0
+	stride := 0
 	var binAttribArray []BinaryVertexAttrib
 	for _, va := range trimesh.vertexAttribNames {
 		desc := attribsGL3[va]
@@ -231,16 +255,19 @@ func (m *Mesh) WriteOpenGL(filename string) {
 			Count: uint32(desc.Count),
 			Type: uint32(desc.Type),
 			Normalized: uint32(normalized),
-			Offset: uint32(offset),
+			Offset: uint32(stride),
 		}
 		binAttribArray = append(binAttribArray, binAttrib)
-		offset += binary.Size(binAttrib)
+		// stride is not complete yet and correspond to the
+		// current attribute's offset
+		stride += binary.Size(binAttrib)
 	}
 
 	vadata := new(bytes.Buffer)
 	for _, va := range binAttribArray {
-		// Stride was not computable at first
-		va.Stride = uint32(offset)
+		// Stride was not computable at first, update it now
+		// TODO: couldn't the stride be global to the vertex buffer?
+		va.Stride = uint32(stride)
 		fmt.Printf("%+v\n", va)
 		binary.Write(vadata, binary.LittleEndian, va)
 	}
@@ -252,24 +279,42 @@ func (m *Mesh) WriteOpenGL(filename string) {
 		binary.Write(vdata, binary.LittleEndian, v.normal.format(attribsGL3[Normal]))
 	}
 
+	// TODO: multiple surfaces
+	sdata := new(bytes.Buffer)
+	binSurf := BinarySurfaceDesc{ Offset: 0, Count: uint32(len(indices)) }
+	binary.Write(sdata, binary.LittleEndian, binSurf)
+
 	idata := new(bytes.Buffer)
 	for _, i := range indices {
 		binary.Write(idata, binary.LittleEndian, uint16(i))
 	}
 
+	var offset uint32
 	var header glHeader
-	headerSize := binary.Size(header)
 	copy(header.name[:len(header.name)-1], m.Name)
+	offset += uint32(binary.Size(header))
+
+	// Vertex attributes
 	header.vertAttribCount = uint32(len(trimesh.vertexAttribNames))
-	header.vertAttribOffset = uint32(headerSize)
-	header.surfDescCount = 0
-	header.surfDescOffset = header.vertAttribOffset + 0
+	header.vertAttribOffset = offset
+	offset += uint32(vadata.Len())
+
+	// Surface descriptors
+	header.surfDescCount = uint32(len(trimesh.surfaces))
+	header.surfDescOffset = offset
+	offset += uint32(sdata.Len())
+
+	// Vertex data
 	header.vertCount = uint32(len(vertices))
-	header.vertDataOffset = uint32(headerSize)
+	header.vertDataOffset = offset
 	header.vertDataSize = uint32(vdata.Len())
+	offset += uint32(vdata.Len())
+
+	// Index data
 	header.indCount = uint32(len(indices))
-	header.indDataOffset = uint32(headerSize + vdata.Len())
+	header.indDataOffset = offset
 	header.indDataSize = uint32(idata.Len())
+	offset += uint32(idata.Len())
 
 	fmt.Printf("%+v\n", header)
 
@@ -278,6 +323,7 @@ func (m *Mesh) WriteOpenGL(filename string) {
 
 	file.Write(hdata.Bytes())
 	file.Write(vadata.Bytes())
+	file.Write(sdata.Bytes())
 	file.Write(vdata.Bytes())
 	file.Write(idata.Bytes())
 }

@@ -13,15 +13,21 @@ func check(e error) {
 	}
 }
 
-var outPath string
+type Meshc struct {
+	objFilename, binFilename string
+	optionVerbose bool
+}
+
+var meshc Meshc
 
 func init() {
-	flag.StringVar(&outPath, "output", "a.bin", "output file")
+	flag.StringVar(&meshc.binFilename, "output", "a.bin", "output file")
+	flag.BoolVar(&meshc.optionVerbose, "verbose", false, "display additional information")
 }
 
 func main() {
 	flag.Parse()
-	objPath := flag.Arg(0)
-	mesh := meshutil.ParseObj(objPath)
-	mesh.WriteOpenGL(outPath)
+	meshc.objFilename = flag.Arg(0)
+	mesh := meshutil.ParseObj(meshc.objFilename)
+	mesh.WriteOpenGL(meshc.binFilename)
 }
