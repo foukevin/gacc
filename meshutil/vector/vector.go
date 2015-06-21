@@ -16,6 +16,10 @@ func (v *Vector3) MultiplyByScalar(s float64) {
 	*v = Vector3{ v.X*s, v.Y*s, v.Z*s }
 }
 
+func Substract(a, b Vector3) Vector3 {
+	return Vector3{ a.X-b.X, a.Y-b.Y, a.Z-b.Z }
+}
+
 func (v Vector3) Magnitude() float64 {
 	return math.Sqrt(Dot(v, v))
 }

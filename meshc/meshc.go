@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -133,12 +134,10 @@ func Encode(m *meshutil.Mesh, filename string) {
 
 	trimesh := MeshToTriangleMesh(m)
 
-	fmt.Println("Vertex attributes: ", trimesh.vertexAttribNames)
 	stride := 0
 	var binAttribArray []BinaryVertexAttrib
 	for _, va := range trimesh.vertexAttribNames {
 		desc := attribsGL3[va]
-		fmt.Printf("%+v\n", attribsGL3[va])
 		normalized := 0
 		if desc.Normalized {
 			normalized = 1
@@ -168,6 +167,8 @@ func Encode(m *meshutil.Mesh, filename string) {
 
 
 	vertices, surfaces := trimesh.makeBuffers()
+	aabbCenter, aabbExtent := AxisAlignedBoudingBox(vertices)
+	fmt.Printf("AABB: %+v %+v\n", aabbCenter, aabbExtent)
 
 	// Vertices
 	vdata := new(bytes.Buffer)
@@ -185,7 +186,6 @@ func Encode(m *meshutil.Mesh, filename string) {
 			StartIndex: uint32(indexCount),
 			Count: uint32(len(indices)),
 		}
-		fmt.Printf("Surface descriptor:\n%+v\n", binSurf)
 		binary.Write(sdata, binary.LittleEndian, binSurf)
 
 		indexCount += len(indices)
@@ -220,6 +220,18 @@ func Encode(m *meshutil.Mesh, filename string) {
 	header.indDataOffset = offset
 	header.indDataSize = uint32(idata.Len())
 	offset += uint32(idata.Len())
+
+	// AABB
+	header.aabbCenter = [3]float32 {
+		float32(aabbCenter.X),
+		float32(aabbCenter.Y),
+		float32(aabbCenter.Z),
+	}
+	header.aabbExtent = [3]float32 {
+		float32(aabbExtent.X),
+		float32(aabbExtent.Y),
+		float32(aabbExtent.Z),
+	}
 
 	fmt.Printf("%+v\n", header)
 
@@ -372,6 +384,36 @@ func MeshToTriangleMesh(m *meshutil.Mesh) *triangleMesh {
 	}
 
 	return trimesh
+}
+
+func AxisAlignedBoudingBox(vertices []vertex) (center, extent vector.Vector3) {
+	min := vector.Vector3{ math.Inf(1), math.Inf(1), math.Inf(1) }
+	max := vector.Vector3{ math.Inf(-1), math.Inf(-1), math.Inf(-1) }
+
+	for _, v := range vertices {
+		p := v.position
+		if p.X < min.X { min.X = p.X }
+		if p.Y < min.Y { min.Y = p.Y }
+		if p.Z < min.Z { min.Z = p.Z }
+		if p.X > max.X { max.X = p.X }
+		if p.Y > max.Y { max.Y = p.Y }
+		if p.Z > max.Z { max.Z = p.Z }
+	}
+
+	fmt.Println(min)
+	fmt.Println(max)
+
+	center.X = (min.X + max.X) / 2
+	center.Y = (min.Y + max.Y) / 2
+	center.Z = (min.Z + max.Z) / 2
+
+	min = vector.Substract(min, center)
+	max = vector.Substract(max, center)
+
+	extent.X = math.Max(math.Abs(min.X), math.Abs(max.X))
+	extent.Y = math.Max(math.Abs(min.Y), math.Abs(max.Y))
+	extent.Z = math.Max(math.Abs(min.Z), math.Abs(max.Z))
+	return
 }
 
 func (m *triangleMesh) makeBuffers() (vertices []vertex, surfaces [][]int) {
