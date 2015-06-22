@@ -1,6 +1,7 @@
 package meshutil
 
 import (
+	"reflect"
 	"io"
 	"os"
 	"encoding/binary"
@@ -374,4 +375,36 @@ func ReadBinaryMeshHeader(filename string) (BinaryMeshHeader, []BinaryVertexAttr
 	}
 
 	return header, vertAttribs
+}
+
+func CStruct() string {
+	var t BinaryMeshHeader
+	s := reflect.ValueOf(&t).Elem()
+
+	res := "struct Mesh {\n"
+
+	typeOfT := s.Type()
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+		var carray, ctype string
+		var baseType reflect.Type
+		if f.Kind() == reflect.Array {
+			carray = fmt.Sprintf("[%d]", f.Len())
+			baseType = f.Type().Elem()
+		} else {
+			baseType = f.Type()
+		}
+
+		switch (baseType.Kind()) {
+		case reflect.Float32:
+			ctype = "float"
+		case reflect.Uint32, reflect.Int32, reflect.Uint16, reflect.Int16, reflect.Uint8, reflect.Int8:
+			ctype = baseType.Name() + "_t"
+		default:
+			ctype = "unknown_type"
+		}
+		res += fmt.Sprintf("\t%s %s%s;\n", ctype, typeOfT.Field(i).Name, carray)
+	}
+
+	return res + "};"
 }
