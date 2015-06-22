@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"flag"
-	"github.com/foukevin/gacc/meshutil"
+	"github.com/foukevin/gacc"
 )
 
 func check(e error) {
@@ -26,7 +26,7 @@ func init() {
 func main() {
 	flag.Parse()
 	readMesh.binFilename = flag.Arg(0)
-	header, vertAttribs := meshutil.ReadBinaryMeshHeader(readMesh.binFilename)
+	header, vertAttribs := gacc.ReadBinaryMeshHeader(readMesh.binFilename)
 
 	fmt.Println("Name: " + string(header.Name[:]))
 	fmt.Printf("Vertex attribute count   : %d\n", header.VertAttribCount)

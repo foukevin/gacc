@@ -1,4 +1,4 @@
-package meshutil
+package gacc
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 	"strconv"
-	"github.com/foukevin/gacc/meshutil/vector"
+	"github.com/foukevin/gacc/vector"
 )
 
 func ParseObj(filename string) Mesh {

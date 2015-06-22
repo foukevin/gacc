@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"flag"
-	"github.com/foukevin/gacc/meshutil"
+	"github.com/foukevin/gacc"
 	"os"
 )
 
@@ -36,11 +36,11 @@ func main() {
 	flag.Parse()
 
 	if meshc.optionStruct {
-		fmt.Println(meshutil.CStruct())
+		fmt.Println(gacc.CStruct())
 		os.Exit(0)
 	}
 	meshc.objFilename = flag.Arg(0)
-	mesh := meshutil.ParseObj(meshc.objFilename)
+	mesh := gacc.ParseObj(meshc.objFilename)
 	mesh.Encode(meshc.binFilename)
 
 }

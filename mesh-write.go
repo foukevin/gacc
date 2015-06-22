@@ -1,4 +1,4 @@
-package meshutil
+package gacc
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"github.com/foukevin/gacc/meshutil/vector"
+	"github.com/foukevin/gacc/vector"
 )
 
 type BinaryMeshHeader struct {

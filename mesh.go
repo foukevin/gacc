@@ -1,7 +1,7 @@
-package meshutil
+package gacc
 
 import (
-	"github.com/foukevin/gacc/meshutil/vector"
+	"github.com/foukevin/gacc/vector"
 )
 
 type FaceVert struct {
