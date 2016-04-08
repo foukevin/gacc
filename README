@@ -1,3 +1,4 @@
 Asset Compiler Collection
 
 A tool collection for processing game assets.
+It is written in Go as an exercise.
